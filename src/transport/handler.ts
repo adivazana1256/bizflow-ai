@@ -1,5 +1,7 @@
 import { respond } from "../ai/engine";
 import { savePendingOrder, type FlowPayload } from "../server/orders";
+import { saveLead } from "../server/leads";
+import { saveRepairBooking } from "../server/repairs";
 import type { EngineReply } from "../flow/types";
 import type { Transport } from "./types";
 
@@ -16,13 +18,25 @@ export async function processInbound(
 
   const out = await respond(messages);
 
-  // Action handling (unchanged business logic): persist a completed order.
+  // Action handling: persist the completed action via its handler.
   let saved = false;
-  if (out.result?.action === "create_order" && out.result.status === "completed" && ctx.businessId) {
+  if (out.result?.status === "completed" && ctx.businessId) {
+    const businessId = ctx.businessId;
+    const payload = out.result.payload as FlowPayload;
     try {
-      saved = (await savePendingOrder(ctx.businessId, out.result.payload as FlowPayload)).saved;
+      switch (out.result.action) {
+        case "create_order":
+          saved = (await savePendingOrder(businessId, payload)).saved;
+          break;
+        case "create_lead":
+          saved = (await saveLead(businessId, payload)).saved;
+          break;
+        case "book_repair":
+          saved = (await saveRepairBooking(businessId, payload)).saved;
+          break;
+      }
     } catch (e) {
-      console.error("savePendingOrder failed:", e);
+      console.error(`action handler failed (${out.result.action}):`, e);
     }
   }
 

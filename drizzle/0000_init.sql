@@ -68,3 +68,32 @@ CREATE TABLE IF NOT EXISTS order_items (
   line_total   integer NOT NULL           -- minor units
 );
 CREATE INDEX IF NOT EXISTS order_items_order_id_idx ON order_items (order_id);
+
+CREATE TABLE IF NOT EXISTS leads (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL REFERENCES businesses(id),
+  name        text NOT NULL,
+  phone       text,
+  interest    text,
+  status      text NOT NULL DEFAULT 'new', -- new | contacted
+  source_key  text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS leads_business_status_idx ON leads (business_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS leads_business_source_key_uq ON leads (business_id, source_key);
+
+CREATE TABLE IF NOT EXISTS repair_bookings (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL REFERENCES businesses(id),
+  service     text NOT NULL,
+  device      text,
+  name        text NOT NULL,
+  phone       text,
+  price       integer NOT NULL DEFAULT 0, -- minor units
+  currency    text NOT NULL,
+  status      text NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+  source_key  text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS repair_bookings_business_status_idx ON repair_bookings (business_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS repair_bookings_business_source_key_uq ON repair_bookings (business_id, source_key);

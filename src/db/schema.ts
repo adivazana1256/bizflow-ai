@@ -68,7 +68,40 @@ export const orderItems = pgTable("order_items", {
   lineTotal: integer("line_total").notNull(), // minor units
 });
 
+// Lead — captured contact from the lead_capture flow. Follow-up list.
+export const leads = pgTable("leads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: uuid("business_id")
+    .notNull()
+    .references(() => businesses.id),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  interest: text("interest"),
+  status: text("status").notNull().default("new"), // new | contacted
+  sourceKey: text("source_key"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Repair booking — from the book_repair flow. Awaits staff confirmation.
+export const repairBookings = pgTable("repair_bookings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: uuid("business_id")
+    .notNull()
+    .references(() => businesses.id),
+  service: text("service").notNull(),
+  device: text("device"),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  price: integer("price").notNull().default(0), // minor units
+  currency: text("currency").notNull(),
+  status: text("status").notNull().default("pending"), // pending | approved | rejected
+  sourceKey: text("source_key"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Business = typeof businesses.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
+export type Lead = typeof leads.$inferSelect;
+export type RepairBooking = typeof repairBookings.$inferSelect;

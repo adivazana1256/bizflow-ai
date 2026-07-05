@@ -4,13 +4,12 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { db } from "@/db/client";
-import { orders } from "@/db/schema";
+import { orders, repairBookings, leads } from "@/db/schema";
 
-async function setStatus(orderId: string, status: "approved" | "rejected") {
+async function setOrderStatus(orderId: string, status: "approved" | "rejected") {
   const session = await auth();
   const businessId = session?.user.businessId;
   if (!businessId) return;
-  // Scope the update to this business and only decide pending orders.
   await db
     .update(orders)
     .set({ status })
@@ -19,9 +18,49 @@ async function setStatus(orderId: string, status: "approved" | "rejected") {
 }
 
 export async function approveOrder(formData: FormData) {
-  await setStatus(String(formData.get("orderId")), "approved");
+  await setOrderStatus(String(formData.get("orderId")), "approved");
+}
+export async function rejectOrder(formData: FormData) {
+  await setOrderStatus(String(formData.get("orderId")), "rejected");
 }
 
-export async function rejectOrder(formData: FormData) {
-  await setStatus(String(formData.get("orderId")), "rejected");
+async function setRepairStatus(repairId: string, status: "approved" | "rejected") {
+  const session = await auth();
+  const businessId = session?.user.businessId;
+  if (!businessId) return;
+  await db
+    .update(repairBookings)
+    .set({ status })
+    .where(
+      and(
+        eq(repairBookings.id, repairId),
+        eq(repairBookings.businessId, businessId),
+        eq(repairBookings.status, "pending"),
+      ),
+    );
+  revalidatePath("/dashboard");
+}
+
+export async function approveRepair(formData: FormData) {
+  await setRepairStatus(String(formData.get("repairId")), "approved");
+}
+export async function rejectRepair(formData: FormData) {
+  await setRepairStatus(String(formData.get("repairId")), "rejected");
+}
+
+export async function markLeadContacted(formData: FormData) {
+  const session = await auth();
+  const businessId = session?.user.businessId;
+  if (!businessId) return;
+  await db
+    .update(leads)
+    .set({ status: "contacted" })
+    .where(
+      and(
+        eq(leads.id, String(formData.get("leadId"))),
+        eq(leads.businessId, businessId),
+        eq(leads.status, "new"),
+      ),
+    );
+  revalidatePath("/dashboard");
 }
