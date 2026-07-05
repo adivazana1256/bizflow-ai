@@ -1,15 +1,14 @@
 import { businessConfig } from "../config";
-import { runMockEngine, type ChatMessage, type EngineReply } from "./mock-engine";
+import { runFlowEngine } from "../flow/engine";
+import type { ChatMessage, EngineReply } from "../flow/types";
 
 export type { ChatMessage, EngineReply };
 
-// Entry point for a chat turn. Loads the active BusinessConfig and produces a
-// reply. When Claude is not configured (no ANTHROPIC_API_KEY) it uses the
-// deterministic mock. The real Claude tool-use loop lands with the AI engine
-// phase; until then this always mocks and flags it.
+// Entry point for a chat turn. Runs the config-driven flow engine. When Claude
+// is not configured (no ANTHROPIC_API_KEY) this deterministic engine is the
+// whole show; the real Claude tool-loop will drive the same flows later.
 export async function respond(messages: ChatMessage[]): Promise<EngineReply & { mock: boolean }> {
   const claudeConfigured = !!process.env.ANTHROPIC_API_KEY;
-  // ponytail: real engine not built yet — mock regardless, but report honestly.
-  const reply = runMockEngine(messages, businessConfig);
+  const reply = runFlowEngine(messages, businessConfig);
   return { ...reply, mock: !claudeConfigured };
 }

@@ -1,50 +1,38 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { customers, orders, orderItems } from "../db/schema";
+import type { FlowPayload } from "../flow/types";
 
-// Shape of the summary produced by the mock engine's create_order result.
-export interface OrderSummary {
-  items: {
-    product: string;
-    size: string | null;
-    extras: string[];
-    quantity: number;
-    unitPrice: number;
-    lineTotal: number;
-  }[];
-  customerName: string;
-  total: number;
-  currency: string;
-}
+export type { FlowPayload };
 
-// Deterministic dedup key: the same completed order (same customer + items +
-// total) yields the same key, so repeated identical chat results insert once.
-// ponytail: changing the order mid-chat makes a new key (new pending order);
-// the superseded one stays until staff rejects it. Fine for the mock.
-function sourceKey(s: OrderSummary): string {
+// Deterministic dedup key: the same completed order yields the same key, so a
+// repeated identical chat result inserts once.
+// ponytail: changing the order mid-chat makes a new key (new pending order); the
+// superseded one stays until staff rejects it. Fine for the current engine.
+function sourceKey(p: FlowPayload): string {
+  const who = p.fields.name ?? Object.values(p.fields)[0] ?? "";
   return JSON.stringify({
-    c: s.customerName,
-    t: s.total,
-    i: s.items.map((i) => [i.product, i.size, i.extras, i.quantity]),
+    c: who,
+    t: p.total,
+    i: p.items.map((i) => [i.name, i.options, i.addOns, i.quantity]),
   });
 }
 
-// Persists a pending order (+ customer + items). No payment, no WhatsApp.
+// Action handler for the "create_order" action. Knows the order payload shape;
+// the flow engine does not. Persists a pending order (+ customer + items).
 // Returns { saved: false } when the dedup key already exists.
-export async function savePendingOrder(businessId: string, summary: OrderSummary) {
-  const key = sourceKey(summary);
+export async function savePendingOrder(businessId: string, payload: FlowPayload) {
+  const key = sourceKey(payload);
+  const customerName = payload.fields.name ?? Object.values(payload.fields)[0] ?? "Unknown";
 
   return db.transaction(async (tx) => {
     let [cust] = await tx
       .select()
       .from(customers)
-      .where(and(eq(customers.businessId, businessId), eq(customers.fullName, summary.customerName)))
+      .where(and(eq(customers.businessId, businessId), eq(customers.fullName, customerName)))
       .limit(1);
     if (!cust) {
-      [cust] = await tx
-        .insert(customers)
-        .values({ businessId, fullName: summary.customerName })
-        .returning();
+      [cust] = await tx.insert(customers).values({ businessId, fullName: customerName }).returning();
     }
 
     const [order] = await tx
@@ -52,8 +40,8 @@ export async function savePendingOrder(businessId: string, summary: OrderSummary
       .values({
         businessId,
         customerId: cust.id,
-        total: summary.total,
-        currency: summary.currency,
+        total: payload.total,
+        currency: payload.currency,
         status: "pending",
         sourceKey: key,
       })
@@ -62,12 +50,13 @@ export async function savePendingOrder(businessId: string, summary: OrderSummary
 
     if (!order) return { saved: false as const }; // duplicate
 
-    for (const it of summary.items) {
+    for (const it of payload.items) {
+      const optionText = Object.values(it.options).join(", ");
       await tx.insert(orderItems).values({
         orderId: order.id,
-        productName: it.product,
-        variantName: it.size,
-        extras: it.extras.join(", "),
+        productName: it.name,
+        variantName: optionText || null,
+        extras: it.addOns.join(", "),
         quantity: it.quantity,
         unitPrice: it.unitPrice,
         lineTotal: it.lineTotal,

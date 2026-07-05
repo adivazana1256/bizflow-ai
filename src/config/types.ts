@@ -1,31 +1,14 @@
-// Reusable client-automation config contract. One BusinessConfig specializes a
-// deployment for a single client. See docs/CLIENT_ENGINE_SPEC.md.
+import type { Flow, OptionGroup, PricedOption, FlowConfig } from "../flow/types";
 
-export type FlowName = "order" | "appointment" | "lead" | "quote" | "faq" | "handover";
+// Business config contract. The merged result the flow engine consumes. It is
+// produced by the package loader from a Template + a Client (see loader.ts).
 
 export interface BusinessHour {
   /** 0 = Sunday … 6 = Saturday */
   day: number;
-  /** "HH:MM" 24h, in the business timezone */
-  open: string;
+  open: string; // "HH:MM" 24h, business timezone
   close: string;
   closed?: boolean;
-}
-
-/** All money is in integer minor units (e.g. cents) of the business currency. */
-export interface CatalogOption {
-  name: string;
-  priceDelta: number;
-}
-
-export interface CatalogProduct {
-  name: string;
-  description?: string;
-  /** base price in minor units */
-  price: number;
-  category?: string;
-  variants?: CatalogOption[];
-  extras?: CatalogOption[];
 }
 
 export interface KnowledgeEntry {
@@ -45,7 +28,6 @@ export interface StaffSeed {
 export interface HandoverRules {
   onComplaint: boolean;
   onLowConfidence: boolean;
-  /** 0..1; below this the AI hands over when onLowConfidence is set */
   confidenceThreshold?: number;
   onRequest: boolean;
 }
@@ -53,30 +35,69 @@ export interface HandoverRules {
 export interface BusinessConfig {
   name: string;
   businessType: string;
-  currency: string; // ISO 4217, e.g. "USD"
-  timezone: string; // IANA, e.g. "America/New_York"
-  locale?: string; // e.g. "en", "he"
+  currency: string; // ISO 4217
+  timezone: string; // IANA
+  locale?: string;
 
   hours: BusinessHour[];
-
-  persona: {
-    /** system prompt that defines how the AI speaks and what it may do */
-    systemPrompt: string;
-    language?: string;
-  };
-
-  /** which flows are active — drives which AI tools are loaded */
-  enabledFlows: FlowName[];
-
-  catalog?: {
-    categories?: string[];
-    products: CatalogProduct[];
-  };
-
+  persona: { systemPrompt: string; language?: string };
+  flows: Flow[];
   knowledge?: KnowledgeEntry[];
-
   handover: HandoverRules;
-
-  /** panel logins created by the seed script */
   staff: StaffSeed[];
+
+  // Client metadata carried through for future use (not read by the engine yet).
+  branding?: { logo?: string };
+  deliveryZones?: string[];
+  phones?: string[];
 }
+
+// ---- Template + Client (merged by the package loader) ----
+
+// A template flow is a flow definition without client data. `usesCatalog` marks
+// the flow that receives the client's catalog (menu/services) at load time.
+export type TemplateFlow = Omit<FlowConfig, "catalog"> & { usesCatalog?: boolean };
+
+export interface TemplateConfig {
+  templateId: string;
+  businessType: string;
+  persona: { systemPrompt: string; language?: string };
+  capabilities?: string[];
+  /** reusable named option groups (e.g. "size") a client's items can reference */
+  optionGroups?: Record<string, OptionGroup>;
+  flows: TemplateFlow[];
+}
+
+export interface ClientCatalogItem {
+  name: string;
+  price: number; // minor units
+  /** names of template option groups to attach (e.g. ["size"]) */
+  optionGroupRefs?: string[];
+  /** inline option groups specific to this item */
+  optionGroups?: OptionGroup[];
+  addOns?: PricedOption[];
+}
+
+export interface ClientConfig {
+  clientId: string;
+  templateId: string;
+
+  name: string;
+  currency: string;
+  timezone: string;
+  locale?: string;
+
+  branding?: { logo?: string };
+  hours: BusinessHour[];
+  deliveryZones?: string[];
+  phones?: string[];
+  staff: StaffSeed[];
+  knowledge?: KnowledgeEntry[];
+  handover: HandoverRules;
+  /** optional override of the template persona */
+  persona?: { systemPrompt: string; language?: string };
+
+  catalog: ClientCatalogItem[];
+}
+
+export type { Flow };

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 
-type Result = { intent: string; status: string; summary?: unknown };
+type Result = { status: string; action: string; payload?: unknown };
 type Msg = { role: "user" | "assistant"; content: string; result?: Result };
 
 export default function SimulatorPage() {

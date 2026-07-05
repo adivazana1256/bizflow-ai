@@ -1,8 +1,14 @@
+import { phoneStoreTemplate } from "../templates/phone-store";
+import { galaxyMobile } from "../clients/galaxy-mobile";
+import { loadBusinessConfig } from "./loader";
 import type { BusinessConfig } from "./types";
-import { pizzaConfig } from "./pizza";
 
-// The active client config for this deployment. Point this at the client's
-// config file (one deployment = one business).
-export const businessConfig: BusinessConfig = pizzaConfig;
+// The active deployment = one client merged with its template. Point this at the
+// client this deployment serves.
+//
+// Pizza example: import { pizzaTemplate } from "../templates/pizza";
+//                import { tonysPizza } from "../clients/tonys-pizza";
+//                loadBusinessConfig(pizzaTemplate, tonysPizza)
+export const businessConfig: BusinessConfig = loadBusinessConfig(phoneStoreTemplate, galaxyMobile);
 
 export type { BusinessConfig };
