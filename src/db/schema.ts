@@ -99,9 +99,41 @@ export const repairBookings = pgTable("repair_bookings", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Conversation — one thread per (business, channel, external id e.g. WhatsApp
+// wa_id). The Conversation Manager (src/server/conversations.ts) owns this.
+export const conversations = pgTable("conversations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: uuid("business_id")
+    .notNull()
+    .references(() => businesses.id),
+  channel: text("channel").notNull(), // "whatsapp" | ...
+  externalId: text("external_id").notNull(), // provider user id (e.g. wa_id/phone)
+  status: text("status").notNull().default("open"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Message — one row per turn. channelMessageId (provider wamid) is the
+// idempotency key: a re-delivered webhook maps to the same id and is skipped.
+export const messages = pgTable("messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  conversationId: uuid("conversation_id")
+    .notNull()
+    .references(() => conversations.id),
+  businessId: uuid("business_id")
+    .notNull()
+    .references(() => businesses.id),
+  role: text("role").notNull(), // "user" | "assistant"
+  text: text("text").notNull(),
+  channelMessageId: text("channel_message_id"), // provider wamid, null for simulator
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Business = typeof businesses.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type Lead = typeof leads.$inferSelect;
 export type RepairBooking = typeof repairBookings.$inferSelect;
+export type Conversation = typeof conversations.$inferSelect;
+export type Message = typeof messages.$inferSelect;

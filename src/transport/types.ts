@@ -10,6 +10,9 @@ export interface InboundMessage {
   text: string; // latest user message, normalized
   history: ChatMessage[]; // prior conversation state
   raw?: unknown; // original provider payload
+  /** Already processed (idempotent re-delivery) or nothing to process — the
+   *  handler should acknowledge without running the engine or replying. */
+  duplicate?: boolean;
 }
 
 export interface OutboundMessage {

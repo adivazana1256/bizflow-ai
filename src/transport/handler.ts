@@ -14,6 +14,13 @@ export async function processInbound(
   ctx: { businessId?: string },
 ): Promise<EngineReply & { mock: boolean; saved: boolean }> {
   const inbound = await transport.receiveMessage(payload);
+
+  // Re-delivered webhook (Meta retries on non-2xx) or a non-message payload
+  // (e.g. a WhatsApp status callback): already handled, nothing to re-run.
+  if (inbound.duplicate) {
+    return { reply: "", mock: false, saved: false };
+  }
+
   const messages = [...inbound.history, { role: "user" as const, content: inbound.text }];
 
   const out = await respond(messages);

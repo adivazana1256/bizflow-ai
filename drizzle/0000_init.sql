@@ -97,3 +97,33 @@ CREATE TABLE IF NOT EXISTS repair_bookings (
 );
 CREATE INDEX IF NOT EXISTS repair_bookings_business_status_idx ON repair_bookings (business_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS repair_bookings_business_source_key_uq ON repair_bookings (business_id, source_key);
+
+-- Phase 4: WhatsApp transport. One conversation per (business, channel,
+-- external id e.g. WhatsApp wa_id); messages keyed by provider id for
+-- idempotency (Meta retries webhooks on non-2xx).
+CREATE TABLE IF NOT EXISTS conversations (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL REFERENCES businesses(id),
+  channel     text NOT NULL,
+  external_id text NOT NULL,
+  status      text NOT NULL DEFAULT 'open',
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS conversations_business_channel_external_uq
+  ON conversations (business_id, channel, external_id);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id    uuid NOT NULL REFERENCES conversations(id),
+  business_id        uuid NOT NULL REFERENCES businesses(id),
+  role               text NOT NULL, -- user | assistant
+  text               text NOT NULL,
+  channel_message_id text, -- provider wamid; null for simulator turns
+  created_at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS messages_conversation_created_idx ON messages (conversation_id, created_at);
+-- Idempotency: NULLs are distinct in Postgres, so simulator rows (no wamid)
+-- never collide; a re-delivered WhatsApp webhook (same wamid) does.
+CREATE UNIQUE INDEX IF NOT EXISTS messages_business_channel_message_uq
+  ON messages (business_id, channel_message_id);
