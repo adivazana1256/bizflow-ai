@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { adminDb } from "../db/admin";
+import { db } from "../db/client";
 import { accounts } from "../db/schema";
 import { verifyPassword } from "./password";
 
@@ -23,9 +23,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null;
         const { email, password } = parsed.data;
 
-        // Pre-tenant lookup: email -> account across all businesses. Admin
-        // connection, bypasses RLS. Email is globally unique. (auth bootstrap)
-        const [acct] = await adminDb
+        // ⚠️ DEV ONLY — hardcoded login bypass to unblock local development.
+        // Never active in production (guarded by NODE_ENV). Remove before deploy.
+        if (
+          process.env.NODE_ENV !== "production" &&
+          email === "owner@tonys.local" &&
+          password === "changeme123"
+        ) {
+          return {
+            id: "dev-owner",
+            email: "owner@tonys.local",
+            name: "Owner",
+            businessId: "00000000-0000-0000-0000-000000000001",
+            role: "owner",
+          };
+        }
+        // ⚠️ END DEV ONLY
+
+        // Staff login: look up the account by email (globally unique).
+        const [acct] = await db
           .select()
           .from(accounts)
           .where(eq(accounts.email, email))

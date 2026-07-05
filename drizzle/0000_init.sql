@@ -1,20 +1,10 @@
--- Phase 1 foundation: businesses + accounts, app role, and RLS tenant isolation.
--- Applied by scripts/migrate.ts via the ADMIN (superuser) connection.
+-- Phase 1/2 foundation: businesses + accounts. Single-tenant per deployment,
+-- so no RLS, no separate app role — the deployment is the isolation boundary.
+-- business_id columns are kept for future flexibility. Applied by scripts/migrate.ts.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto; -- gen_random_uuid()
 
--- App role: logs in, but is NOT a superuser and NOT a table owner, so RLS
--- policies apply to it. The runtime app connects as this role. (C2)
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'bizflow_app') THEN
-    CREATE ROLE bizflow_app LOGIN PASSWORD 'app_password';
-  END IF;
-END
-$$;
-
-GRANT USAGE ON SCHEMA public TO bizflow_app;
-
+-- The single business this deployment serves (effectively a singleton row).
 CREATE TABLE IF NOT EXISTS businesses (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name          text NOT NULL,
@@ -28,6 +18,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
+-- Staff who log into the approval panel. Seeded by the developer, no signup.
 CREATE TABLE IF NOT EXISTS accounts (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   business_id   uuid NOT NULL REFERENCES businesses(id),
@@ -41,19 +32,39 @@ CREATE TABLE IF NOT EXISTS accounts (
 
 CREATE INDEX IF NOT EXISTS accounts_business_id_idx ON accounts (business_id);
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON businesses, accounts TO bizflow_app;
+CREATE TABLE IF NOT EXISTS customers (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL REFERENCES businesses(id),
+  full_name   text NOT NULL,
+  phone       text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS customers_business_id_idx ON customers (business_id);
 
--- Row-Level Security. current_setting(..., true) returns NULL when unset, so an
--- unscoped query matches nothing (fail closed) rather than erroring.
-ALTER TABLE businesses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE accounts   ENABLE ROW LEVEL SECURITY;
+CREATE TABLE IF NOT EXISTS orders (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL REFERENCES businesses(id),
+  customer_id uuid REFERENCES customers(id),
+  total       integer NOT NULL,          -- minor units
+  currency    text NOT NULL,
+  status      text NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+  source_key  text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS orders_business_status_idx ON orders (business_id, status);
+-- Dedup: one order per (business, source_key). NULL keys stay distinct (Postgres
+-- default), so orders without a key are never collapsed.
+CREATE UNIQUE INDEX IF NOT EXISTS orders_business_source_key_uq
+  ON orders (business_id, source_key);
 
-DROP POLICY IF EXISTS tenant_isolation ON businesses;
-CREATE POLICY tenant_isolation ON businesses
-  USING (id = current_setting('app.business_id', true)::uuid)
-  WITH CHECK (id = current_setting('app.business_id', true)::uuid);
-
-DROP POLICY IF EXISTS tenant_isolation ON accounts;
-CREATE POLICY tenant_isolation ON accounts
-  USING (business_id = current_setting('app.business_id', true)::uuid)
-  WITH CHECK (business_id = current_setting('app.business_id', true)::uuid);
+CREATE TABLE IF NOT EXISTS order_items (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id     uuid NOT NULL REFERENCES orders(id),
+  product_name text NOT NULL,
+  variant_name text,
+  extras       text,
+  quantity     integer NOT NULL,
+  unit_price   integer NOT NULL,          -- minor units
+  line_total   integer NOT NULL           -- minor units
+);
+CREATE INDEX IF NOT EXISTS order_items_order_id_idx ON order_items (order_id);

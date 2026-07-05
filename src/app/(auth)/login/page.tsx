@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
 import { login, type FormState } from "../actions";
 
@@ -34,12 +33,6 @@ export default function LoginPage() {
           {pending ? "…" : "Log in"}
         </button>
       </form>
-      <p className="mt-4 text-sm text-gray-600">
-        No account?{" "}
-        <Link href="/signup" className="underline">
-          Sign up
-        </Link>
-      </p>
     </main>
   );
 }
