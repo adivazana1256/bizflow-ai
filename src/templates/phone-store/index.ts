@@ -26,7 +26,7 @@ export const phoneStoreTemplate: TemplateConfig = {
       usesCatalog: true,
       itemPrompt:
         "Which repair do you need? (Screen replacement, Battery replacement, Water damage diagnostics)",
-      triggers: ["repair", "fix", "broken", "cracked", "replace", "not working", "battery"],
+      triggers: ["repair", "fix", "broken", "cracked", "replace", "not working"],
       fields: [
         { name: "device", prompt: "Which phone model needs the repair?", required: true },
         { name: "name", prompt: "What name is the booking under?", required: true },
@@ -38,7 +38,7 @@ export const phoneStoreTemplate: TemplateConfig = {
     {
       id: "lead_capture",
       action: "create_lead",
-      triggers: ["buy", "purchase", "interested", "looking for", "reserve", "quote", "trade in", "upgrade"],
+      triggers: ["buy", "purchase", "interested", "looking for", "reserve", "quote", "trade in"],
       fields: [
         { name: "name", prompt: "Sure! Can I take your name?", required: true },
         { name: "phone", prompt: "And the best phone number to reach you?", required: true },

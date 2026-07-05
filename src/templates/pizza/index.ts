@@ -35,7 +35,9 @@ export const pizzaTemplate: TemplateConfig = {
       action: "create_order",
       usesCatalog: true,
       itemPrompt: "What would you like to order?",
-      triggers: ["order", "buy", "get"],
+      // Catalog-driven: mentioning a menu item selects the flow. Generic words
+      // like "order"/"buy"/"get" are common in unrelated sentences, so omitted.
+      triggers: [],
       quantity: { required: true, prompt: "How many would you like?" },
       fields: [
         { name: "name", prompt: "Almost done — what name should I put the order under?", required: true },

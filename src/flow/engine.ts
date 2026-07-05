@@ -40,8 +40,11 @@ export function runFlowEngine(messages: ChatMessage[], config: BusinessConfig): 
     };
   }
 
-  // 2. Select the active flow (sticky across turns).
-  const flow = selectFlow(allLower, messages, config.flows);
+  // 2. Select the active flow (sticky across turns). A flow that already
+  // completed in this conversation is released, so it does not re-emit its
+  // result on later messages (M2 terminal guard).
+  let flow = selectFlow(allLower, messages, config.flows);
+  if (flow && alreadyCompleted(flow, messages)) flow = undefined;
 
   // 3. Greeting — only when no flow is engaged.
   if (!flow && GREETING_RE.test(lastUser)) {
@@ -80,9 +83,28 @@ function flowPrompts(flow: FlowConfig): string[] {
   return prompts;
 }
 
+// Word-boundary phrase match, so a trigger/item does not match inside another
+// word ("order" must not fire on "in order to", "get" not on "budget").
+function hasPhrase(text: string, phrase: string): boolean {
+  const re = new RegExp(`(?:^|[^a-z0-9])${escapeRe(phrase.toLowerCase())}(?![a-z0-9])`, "i");
+  return re.test(text);
+}
+
 function flowMatches(flow: FlowConfig, allLower: string): boolean {
-  if ((flow.triggers ?? []).some((t) => allLower.includes(t.toLowerCase()))) return true;
-  return (flow.catalog ?? []).some((i) => allLower.includes(i.name.toLowerCase()));
+  if ((flow.triggers ?? []).some((t) => hasPhrase(allLower, t))) return true;
+  return (flow.catalog ?? []).some((i) => hasPhrase(allLower, i.name));
+}
+
+// A flow is terminal if a stable literal segment of its completion reply already
+// appears in the assistant history — i.e. it completed on an earlier turn.
+function alreadyCompleted(flow: FlowConfig, messages: ChatMessage[]): boolean {
+  const literal = flow.completionReply
+    .split(/\{\w+\}/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 8)
+    .sort((a, b) => b.length - a.length)[0];
+  if (!literal) return false;
+  return messages.some((m) => m.role === "assistant" && m.content.includes(literal));
 }
 
 function selectFlow(allLower: string, messages: ChatMessage[], flows: FlowConfig[]): FlowConfig | undefined {
