@@ -6,7 +6,14 @@ import type { FlowPayload } from "../flow/types";
 // staff confirmation. `idempotencyKey` (the inbound provider message id)
 // identifies one submission, so two bookings with identical details never
 // collide, while a re-delivered webhook dedups.
-export async function saveRepairBooking(businessId: string, payload: FlowPayload, idempotencyKey: string) {
+// `source` records where the booking came from (channel + the customer's id
+// on that channel), so an approval/rejection reply knows where to send it.
+export async function saveRepairBooking(
+  businessId: string,
+  payload: FlowPayload,
+  idempotencyKey: string,
+  source: { channel: string; externalId: string },
+) {
   const f = payload.fields;
   const service = payload.items[0]?.name ?? "Repair";
   const name = f.name ?? "Unknown";
@@ -24,6 +31,8 @@ export async function saveRepairBooking(businessId: string, payload: FlowPayload
       currency: payload.currency,
       status: "pending",
       sourceKey: key,
+      channel: source.channel,
+      customerExternalId: source.externalId,
     })
     .onConflictDoNothing({ target: [repairBookings.businessId, repairBookings.sourceKey] })
     .returning();

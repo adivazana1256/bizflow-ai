@@ -4,12 +4,11 @@ import { db } from "../src/db/client";
 import { businesses, accounts } from "../src/db/schema";
 import { hashPassword } from "../src/lib/password";
 import { businessConfig } from "../src/config";
+import { DEV_BUSINESS_ID } from "../src/lib/constants";
 
 // Seeds the single business + staff logins from the active config. Replaces the
 // removed public signup. Idempotent: skips rows that already exist.
 // ponytail: catalog/knowledge seeding is added once those tables exist (later phase).
-// Fixed singleton business id — matches the DEV ONLY login bypass in src/lib/auth.ts.
-const DEV_BUSINESS_ID = "00000000-0000-0000-0000-000000000001";
 
 async function main() {
   const cfg = businessConfig;

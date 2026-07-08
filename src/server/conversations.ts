@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { businesses, conversations, messages } from "../db/schema";
 import type { ChatMessage } from "../flow/types";
+import { DEV_BUSINESS_ID } from "../lib/constants";
 
 // Conversation Manager. Owns the conversation/message tables so channel
 // transports (WhatsApp today) don't touch Drizzle directly. Single-tenant
@@ -11,7 +12,14 @@ let cachedBusinessId: string | null = null;
 
 export async function getDeploymentBusinessId(): Promise<string> {
   if (cachedBusinessId) return cachedBusinessId;
-  const [biz] = await db.select({ id: businesses.id }).from(businesses).limit(1);
+  // Deterministic, not an unordered `limit(1)` — must match the id the seed
+  // pins and the dev-login bypass returns, or WhatsApp writes and the panel
+  // read land on different business rows.
+  const [biz] = await db
+    .select({ id: businesses.id })
+    .from(businesses)
+    .where(eq(businesses.id, DEV_BUSINESS_ID))
+    .limit(1);
   if (!biz) throw new Error("no business row — run npm run db:seed");
   cachedBusinessId = biz.id;
   return biz.id;

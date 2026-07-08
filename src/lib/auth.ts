@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "../db/client";
 import { accounts } from "../db/schema";
 import { verifyPassword } from "./password";
+import { DEV_BUSINESS_ID } from "./constants";
 
 const credsSchema = z.object({
   email: z.string().email(),
@@ -34,7 +35,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             id: "dev-owner",
             email: "owner@tonys.local",
             name: "Owner",
-            businessId: "00000000-0000-0000-0000-000000000001",
+            businessId: DEV_BUSINESS_ID,
             role: "owner",
           };
         }

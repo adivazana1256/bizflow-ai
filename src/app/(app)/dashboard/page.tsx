@@ -3,7 +3,15 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db/client";
 import { businesses, customers, orders, orderItems, leads, repairBookings } from "@/db/schema";
 import { formatMoney } from "@/lib/money";
-import { approveOrder, rejectOrder, approveRepair, rejectRepair, markLeadContacted } from "./actions";
+import { businessConfig } from "@/config";
+import {
+  approveOrder,
+  rejectOrder,
+  approveRepair,
+  rejectRepair,
+  markLeadContacted,
+  closeLead,
+} from "./actions";
 
 export default async function PanelPage() {
   const session = await auth();
@@ -50,7 +58,7 @@ export default async function PanelPage() {
       <div>
         <h1 className="text-2xl font-semibold">Approval Panel</h1>
         <p className="mt-1 text-sm text-gray-500">
-          {business?.name} · {business?.currency} · {session!.user.email} ({session!.user.role})
+          {businessConfig.name} · {business?.currency} · {session!.user.email} ({session!.user.role})
         </p>
       </div>
 
@@ -79,9 +87,14 @@ export default async function PanelPage() {
                       Total: {formatMoney(order.total, order.currency)}
                     </p>
                   </div>
-                  <div className="flex shrink-0 gap-2">
-                    <form action={approveOrder}>
+                  <div className="flex shrink-0 items-start gap-2">
+                    <form action={approveOrder} className="flex items-center gap-2">
                       <input type="hidden" name="orderId" value={order.id} />
+                      <select name="eta" className="rounded border border-gray-300 px-2 py-1 text-sm">
+                        <option value="30">30 min</option>
+                        <option value="45">45 min</option>
+                        <option value="60">60 min</option>
+                      </select>
                       <button className="rounded bg-emerald-700 px-3 py-1 text-sm text-white">Approve</button>
                     </form>
                     <form action={rejectOrder}>
@@ -114,9 +127,13 @@ export default async function PanelPage() {
                     </p>
                     {r.phone && <p className="text-sm text-gray-400">{r.phone}</p>}
                   </div>
-                  <div className="flex shrink-0 gap-2">
-                    <form action={approveRepair}>
+                  <div className="flex shrink-0 items-start gap-2">
+                    <form action={approveRepair} className="flex items-center gap-2">
                       <input type="hidden" name="repairId" value={r.id} />
+                      <select name="mode" className="rounded border border-gray-300 px-2 py-1 text-sm">
+                        <option value="today">Bring today</option>
+                        <option value="appointment">Appointment needed</option>
+                      </select>
                       <button className="rounded bg-emerald-700 px-3 py-1 text-sm text-white">Approve</button>
                     </form>
                     <form action={rejectRepair}>
@@ -148,10 +165,16 @@ export default async function PanelPage() {
                     </p>
                     {l.phone && <p className="text-sm text-gray-400">{l.phone}</p>}
                   </div>
-                  <form action={markLeadContacted} className="shrink-0">
-                    <input type="hidden" name="leadId" value={l.id} />
-                    <button className="rounded border border-gray-300 px-3 py-1 text-sm">Mark contacted</button>
-                  </form>
+                  <div className="flex shrink-0 gap-2">
+                    <form action={markLeadContacted}>
+                      <input type="hidden" name="leadId" value={l.id} />
+                      <button className="rounded border border-gray-300 px-3 py-1 text-sm">Mark contacted</button>
+                    </form>
+                    <form action={closeLead}>
+                      <input type="hidden" name="leadId" value={l.id} />
+                      <button className="rounded border border-gray-300 px-3 py-1 text-sm">Reject / close</button>
+                    </form>
+                  </div>
                 </div>
               </li>
             ))}

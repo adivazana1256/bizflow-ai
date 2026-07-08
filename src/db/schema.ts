@@ -52,6 +52,10 @@ export const orders = pgTable("orders", {
   // dedup key derived from the summary, so a repeated identical chat result
   // does not create duplicate orders. Unique per business.
   sourceKey: text("source_key"),
+  // Source channel ("whatsapp" | "simulator") + the customer's id on that
+  // channel (WhatsApp wa_id), so approval replies know where to send.
+  channel: text("channel"),
+  customerExternalId: text("customer_external_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -96,6 +100,10 @@ export const repairBookings = pgTable("repair_bookings", {
   currency: text("currency").notNull(),
   status: text("status").notNull().default("pending"), // pending | approved | rejected
   sourceKey: text("source_key"),
+  // Source channel ("whatsapp" | "simulator") + the customer's id on that
+  // channel (WhatsApp wa_id), so approval replies know where to send.
+  channel: text("channel"),
+  customerExternalId: text("customer_external_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

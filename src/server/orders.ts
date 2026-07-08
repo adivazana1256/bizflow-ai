@@ -12,7 +12,14 @@ export type { FlowPayload };
 // content, so two different customers with identical order details never
 // collide, while a re-delivered webhook (same key) still dedups.
 // Returns { saved: false } when the dedup key already exists.
-export async function savePendingOrder(businessId: string, payload: FlowPayload, idempotencyKey: string) {
+// `source` records where the order came from (channel + the customer's id on
+// that channel), so an approval/rejection reply knows where to send it.
+export async function savePendingOrder(
+  businessId: string,
+  payload: FlowPayload,
+  idempotencyKey: string,
+  source: { channel: string; externalId: string },
+) {
   const customerName = payload.fields.name ?? Object.values(payload.fields)[0] ?? "Unknown";
 
   return db.transaction(async (tx) => {
@@ -34,6 +41,8 @@ export async function savePendingOrder(businessId: string, payload: FlowPayload,
         currency: payload.currency,
         status: "pending",
         sourceKey: idempotencyKey,
+        channel: source.channel,
+        customerExternalId: source.externalId,
       })
       .onConflictDoNothing({ target: [orders.businessId, orders.sourceKey] })
       .returning();

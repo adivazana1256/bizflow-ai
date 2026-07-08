@@ -49,8 +49,12 @@ CREATE TABLE IF NOT EXISTS orders (
   currency    text NOT NULL,
   status      text NOT NULL DEFAULT 'pending', -- pending | approved | rejected
   source_key  text,
+  channel               text, -- 'whatsapp' | 'simulator', null for pre-migration rows
+  customer_external_id  text, -- WhatsApp wa_id; where approval replies are sent
   created_at  timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS channel text;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_external_id text;
 CREATE INDEX IF NOT EXISTS orders_business_status_idx ON orders (business_id, status);
 -- Dedup: one order per (business, source_key). NULL keys stay distinct (Postgres
 -- default), so orders without a key are never collapsed.
@@ -93,8 +97,12 @@ CREATE TABLE IF NOT EXISTS repair_bookings (
   currency    text NOT NULL,
   status      text NOT NULL DEFAULT 'pending', -- pending | approved | rejected
   source_key  text,
+  channel               text, -- 'whatsapp' | 'simulator', null for pre-migration rows
+  customer_external_id  text, -- WhatsApp wa_id; where approval replies are sent
   created_at  timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE repair_bookings ADD COLUMN IF NOT EXISTS channel text;
+ALTER TABLE repair_bookings ADD COLUMN IF NOT EXISTS customer_external_id text;
 CREATE INDEX IF NOT EXISTS repair_bookings_business_status_idx ON repair_bookings (business_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS repair_bookings_business_source_key_uq ON repair_bookings (business_id, source_key);
 

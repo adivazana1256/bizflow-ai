@@ -36,16 +36,17 @@ export async function processInbound(
     const businessId = ctx.businessId;
     const payload = out.result.payload as FlowPayload;
     const idempotencyKey = inbound.messageId ?? randomUUID();
+    const source = { channel: inbound.channel, externalId: inbound.from };
     try {
       switch (out.result.action) {
         case "create_order":
-          saved = (await savePendingOrder(businessId, payload, idempotencyKey)).saved;
+          saved = (await savePendingOrder(businessId, payload, idempotencyKey, source)).saved;
           break;
         case "create_lead":
           saved = (await saveLead(businessId, payload, idempotencyKey)).saved;
           break;
         case "book_repair":
-          saved = (await saveRepairBooking(businessId, payload, idempotencyKey)).saved;
+          saved = (await saveRepairBooking(businessId, payload, idempotencyKey, source)).saved;
           break;
       }
       if (!saved) console.warn(`action handler dedup-dropped (${out.result.action}), key=${idempotencyKey}`);
