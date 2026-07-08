@@ -23,7 +23,14 @@ const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export function runFlowEngine(messages: ChatMessage[], config: BusinessConfig): EngineReply {
-  const userMsgs = messages.filter((m) => m.role === "user");
+  // Window the conversation to only what happened after the most recent
+  // completed flow (any flow), so a completed transaction can never lock a
+  // repeat customer out of triggering a fresh one on a permanent (never-reset)
+  // conversation. Selection and slot-filling only ever see this window.
+  const windowStart = lastCompletionIndex(messages, config.flows) + 1;
+  const windowMessages = messages.slice(windowStart);
+
+  const userMsgs = windowMessages.filter((m) => m.role === "user");
   const lastUser = userMsgs.at(-1)?.content ?? "";
   const lastLower = lastUser.toLowerCase();
   const allUser = userMsgs.map((m) => m.content).join("\n");
@@ -40,11 +47,8 @@ export function runFlowEngine(messages: ChatMessage[], config: BusinessConfig): 
     };
   }
 
-  // 2. Select the active flow (sticky across turns). A flow that already
-  // completed in this conversation is released, so it does not re-emit its
-  // result on later messages (M2 terminal guard).
-  let flow = selectFlow(allLower, messages, config.flows);
-  if (flow && alreadyCompleted(flow, messages)) flow = undefined;
+  // 2. Select the active flow (sticky across turns, within the window).
+  const flow = selectFlow(allLower, windowMessages, config.flows);
 
   // 3. Greeting — only when no flow is engaged.
   if (!flow && GREETING_RE.test(lastUser)) {
@@ -63,7 +67,7 @@ export function runFlowEngine(messages: ChatMessage[], config: BusinessConfig): 
   }
 
   // 5. Run the selected flow.
-  if (flow) return runFlow(messages, allUser, allLower, flow, config);
+  if (flow) return runFlow(windowMessages, allUser, allLower, flow, config);
 
   // 6. Fallback.
   return {
@@ -95,16 +99,27 @@ function flowMatches(flow: FlowConfig, allLower: string): boolean {
   return (flow.catalog ?? []).some((i) => hasPhrase(allLower, i.name));
 }
 
-// A flow is terminal if a stable literal segment of its completion reply already
-// appears in the assistant history — i.e. it completed on an earlier turn.
-function alreadyCompleted(flow: FlowConfig, messages: ChatMessage[]): boolean {
-  const literal = flow.completionReply
+// A stable literal segment of a flow's completion reply (placeholders stripped),
+// used to detect that the flow completed on an earlier turn.
+function completionLiteral(flow: FlowConfig): string | undefined {
+  return flow.completionReply
     .split(/\{\w+\}/)
     .map((s) => s.trim())
     .filter((s) => s.length >= 8)
     .sort((a, b) => b.length - a.length)[0];
-  if (!literal) return false;
-  return messages.some((m) => m.role === "assistant" && m.content.includes(literal));
+}
+
+// Index of the last assistant message that completed ANY flow, or -1 if none.
+// Selection/slot-filling only run on messages after this index, so a permanent
+// (never-reset) conversation gets a fresh window per completed transaction
+// instead of being locked out forever.
+function lastCompletionIndex(messages: ChatMessage[], flows: FlowConfig[]): number {
+  const literals = flows.map(completionLiteral).filter((l): l is string => !!l);
+  let idx = -1;
+  messages.forEach((m, i) => {
+    if (m.role === "assistant" && literals.some((l) => m.content.includes(l))) idx = i;
+  });
+  return idx;
 }
 
 function selectFlow(allLower: string, messages: ChatMessage[], flows: FlowConfig[]): FlowConfig | undefined {
@@ -149,6 +164,18 @@ function parseNumber(text: string): number | undefined {
   if (d) return Number(d[1]);
   const w = Object.keys(NUMBER_WORDS).find((x) => text.includes(x));
   return w ? NUMBER_WORDS[w] : undefined;
+}
+
+// Quantity is only ever read as the direct answer to the quantity prompt
+// (mirrors extractField's Q&A pairing) — never scanned out of arbitrary free
+// text (e.g. "apartment 12" must not become quantity 12).
+function extractQuantity(quantityPrompt: string, messages: ChatMessage[]): number | undefined {
+  for (let i = 0; i < messages.length - 1; i++) {
+    if (messages[i].role === "assistant" && messages[i].content === quantityPrompt && messages[i + 1].role === "user") {
+      return parseNumber(messages[i + 1].content.toLowerCase());
+    }
+  }
+  return undefined;
 }
 
 function extractField(
@@ -202,10 +229,10 @@ function runFlow(
     for (const a of item.addOns ?? []) if (allLower.includes(a.name.toLowerCase())) addOnsList.push(a);
   }
 
-  // Quantity.
+  // Quantity — only from the direct answer to the quantity prompt.
   let quantity = 1;
   if (flow.quantity?.required) {
-    const q = parseNumber(allLower);
+    const q = extractQuantity(flow.quantity.prompt, messages);
     if (!q) return { reply: flow.quantity.prompt };
     quantity = q;
   }

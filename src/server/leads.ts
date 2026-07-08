@@ -2,12 +2,13 @@ import { db } from "../db/client";
 import { leads } from "../db/schema";
 import type { FlowPayload } from "../flow/types";
 
-// Action handler for "create_lead". Persists a captured lead. Dedup by contact +
-// interest so a repeated identical result inserts once.
-export async function saveLead(businessId: string, payload: FlowPayload) {
+// Action handler for "create_lead". Persists a captured lead. `idempotencyKey`
+// (the inbound provider message id) identifies one submission, so two leads
+// with identical details never collide, while a re-delivered webhook dedups.
+export async function saveLead(businessId: string, payload: FlowPayload, idempotencyKey: string) {
   const f = payload.fields;
   const name = f.name ?? "Unknown";
-  const key = JSON.stringify({ name, phone: f.phone ?? "", interest: f.interest ?? "" });
+  const key = idempotencyKey;
 
   const [row] = await db
     .insert(leads)

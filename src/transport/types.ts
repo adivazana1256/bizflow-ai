@@ -10,6 +10,9 @@ export interface InboundMessage {
   text: string; // latest user message, normalized
   history: ChatMessage[]; // prior conversation state
   raw?: unknown; // original provider payload
+  /** Per-submission idempotency token (e.g. the WhatsApp wamid). Undefined on
+   *  channels without a stable provider message id (e.g. the simulator). */
+  messageId?: string;
   /** Already processed (idempotent re-delivery) or nothing to process — the
    *  handler should acknowledge without running the engine or replying. */
   duplicate?: boolean;

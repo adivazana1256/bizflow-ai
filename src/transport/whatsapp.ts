@@ -35,6 +35,23 @@ export function parseWhatsAppWebhook(payload: unknown): ParsedInbound | null {
   return { from: msg.from, text: msg.text.body, wamid: msg.id };
 }
 
+// Meta can batch multiple messages into one webhook delivery (bursts, or
+// catch-up after downtime). Split the body into one single-message body per
+// message, in delivery order, so the route can run each through the normal
+// (idempotent) path instead of silently dropping all but the first.
+export function splitWhatsAppWebhook(payload: unknown): unknown[] {
+  const entries = (payload as WhatsAppWebhookBody)?.entry ?? [];
+  const bodies: unknown[] = [];
+  for (const entry of entries) {
+    for (const change of entry.changes ?? []) {
+      for (const msg of change.value?.messages ?? []) {
+        bodies.push({ entry: [{ changes: [{ value: { messages: [msg] } }] }] });
+      }
+    }
+  }
+  return bodies;
+}
+
 export class WhatsAppTransport implements Transport {
   channel = "whatsapp";
 
@@ -85,7 +102,7 @@ export class WhatsAppTransport implements Transport {
     // inserted:false means this wamid was already stored — a re-delivered
     // webhook (Meta retries on non-2xx). Mark it so the handler no-ops instead
     // of replying to the customer twice.
-    return { channel: this.channel, from, text, history, raw: payload, duplicate: !inserted };
+    return { channel: this.channel, from, text, history, raw: payload, messageId: wamid, duplicate: !inserted };
   }
 
   async sendMessage(message: OutboundMessage): Promise<void> {

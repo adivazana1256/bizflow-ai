@@ -1,6 +1,6 @@
 import { getDeploymentBusinessId } from "@/server/conversations";
 import { processInbound } from "@/transport/handler";
-import { WhatsAppTransport } from "@/transport/whatsapp";
+import { splitWhatsAppWebhook, WhatsAppTransport } from "@/transport/whatsapp";
 
 // WhatsApp Cloud API webhook. GET is Meta's verification handshake; POST
 // delivers inbound messages (and status callbacks, which we no-op on).
@@ -20,9 +20,11 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   // Raw text first — signature verification is over the exact bytes Meta sent.
   const rawBody = await req.text();
-  const transport = new WhatsAppTransport();
 
-  if (!transport.verifySignature(rawBody, req.headers.get("x-hub-signature-256"))) {
+  // Signature check uses a throwaway transport instance; each message below
+  // gets its own transport so a stashed conversation/business id from one
+  // message never leaks into another.
+  if (!new WhatsAppTransport().verifySignature(rawBody, req.headers.get("x-hub-signature-256"))) {
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -33,7 +35,12 @@ export async function POST(req: Request) {
   try {
     const body: unknown = JSON.parse(rawBody);
     const businessId = await getDeploymentBusinessId();
-    await processInbound(transport, body, { businessId });
+    // Meta can batch multiple messages into one delivery — process each, in
+    // order, through the normal (idempotent) path. Status callbacks / non-text
+    // deliveries split to zero messages and no-op, as before.
+    for (const messageBody of splitWhatsAppWebhook(body)) {
+      await processInbound(new WhatsAppTransport(), messageBody, { businessId });
+    }
   } catch (e) {
     console.error("whatsapp webhook processing failed:", e);
   }

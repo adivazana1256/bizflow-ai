@@ -5,24 +5,14 @@ import type { FlowPayload } from "../flow/types";
 
 export type { FlowPayload };
 
-// Deterministic dedup key: the same completed order yields the same key, so a
-// repeated identical chat result inserts once.
-// ponytail: changing the order mid-chat makes a new key (new pending order); the
-// superseded one stays until staff rejects it. Fine for the current engine.
-function sourceKey(p: FlowPayload): string {
-  const who = p.fields.name ?? Object.values(p.fields)[0] ?? "";
-  return JSON.stringify({
-    c: who,
-    t: p.total,
-    i: p.items.map((i) => [i.name, i.options, i.addOns, i.quantity]),
-  });
-}
-
 // Action handler for the "create_order" action. Knows the order payload shape;
 // the flow engine does not. Persists a pending order (+ customer + items).
+// `idempotencyKey` (the inbound provider message id, or a fresh one when the
+// channel has none) is the dedup key — it identifies one submission, not its
+// content, so two different customers with identical order details never
+// collide, while a re-delivered webhook (same key) still dedups.
 // Returns { saved: false } when the dedup key already exists.
-export async function savePendingOrder(businessId: string, payload: FlowPayload) {
-  const key = sourceKey(payload);
+export async function savePendingOrder(businessId: string, payload: FlowPayload, idempotencyKey: string) {
   const customerName = payload.fields.name ?? Object.values(payload.fields)[0] ?? "Unknown";
 
   return db.transaction(async (tx) => {
@@ -43,7 +33,7 @@ export async function savePendingOrder(businessId: string, payload: FlowPayload)
         total: payload.total,
         currency: payload.currency,
         status: "pending",
-        sourceKey: key,
+        sourceKey: idempotencyKey,
       })
       .onConflictDoNothing({ target: [orders.businessId, orders.sourceKey] })
       .returning();
