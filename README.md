@@ -25,13 +25,15 @@ The goal isn't to build a chatbot. It's to build an **AI Employee** — one that
 
 ## ✨ Feature Highlights
 
-✅ WhatsApp Cloud API &nbsp;·&nbsp; ✅ Generic Execution Engine &nbsp;·&nbsp; ✅ Multi-Business Architecture &nbsp;·&nbsp; ✅ Approval Workflow &nbsp;·&nbsp; ✅ AI-ready Tool Registry &nbsp;·&nbsp; ✅ Simulator
+✅ Claude AI Employee Runtime &nbsp;·&nbsp; ✅ Live Tool Calling &nbsp;·&nbsp; ✅ WhatsApp Cloud API &nbsp;·&nbsp; ✅ Multi-Business Architecture &nbsp;·&nbsp; ✅ Approval Workflow &nbsp;·&nbsp; ✅ Hebrew Customer-Service Persona &nbsp;·&nbsp; ✅ Deterministic Fallback Mode &nbsp;·&nbsp; ✅ Simulator
 
 ## What it does
 
-Customers message a business on WhatsApp. BizFlow AI understands the intent, runs a config-driven conversation flow (ordering, repair booking, lead capture, FAQ, human handover), persists the structured business data (orders, leads, bookings), and lets staff approve or reject it from an in-app Approval Panel. Approving or rejecting sends a WhatsApp reply straight back to the customer.
+Customers message a business on WhatsApp. A **Claude-powered AI Employee** understands the natural-language request, selects and executes typed business tools from the Tool Registry (ordering, repair booking, lead capture, knowledge/FAQ, human handover), and replies as a real customer-service employee. Tool results are internal — the customer never sees raw tool output. Completed actions (`create_order`, `create_lead`, `book_repair`) are persisted as structured records, and the ones that need it await staff approval in an in-app Approval Panel; approving or rejecting sends a WhatsApp reply straight back to the customer.
 
-Each deployment serves **one business**. The core engine is business-agnostic — a business is expressed as configuration ("client config" layered on a "template"), not as bespoke code.
+If `ANTHROPIC_API_KEY` is not set, the app falls back to a deterministic, config-driven Execution Engine so it always works without an LLM.
+
+Each deployment serves **one business**. The core is business-agnostic — a business is expressed as configuration ("client config" layered on a "template"), not as bespoke code.
 
 ## Main features
 
@@ -39,8 +41,10 @@ Each deployment serves **one business**. The core engine is business-agnostic �
 - WhatsApp Cloud API transport with signature verification and idempotent webhook handling
 - Structured persistence of conversations, orders, leads, and repair bookings in PostgreSQL
 - Staff Approval Panel — approve/reject with details (e.g. pick an ETA or repair mode) and auto-reply to the customer
-- In-app Simulator to exercise the same engine and flows without a WhatsApp account
-- Tool Registry — 7 typed, zod-validated business actions, scaffolded and ready for a future Claude tool-loop
+- In-app Simulator to exercise the same runtime and flows without a WhatsApp account
+- **Claude AI Employee runtime** — a live tool-calling loop over the Tool Registry, using conversation history as short-term memory
+- Tool Registry — 7 typed, zod-validated business actions, called live by Claude (and reused by the deterministic fallback)
+- Deterministic Execution Engine as an automatic fallback when `ANTHROPIC_API_KEY` is missing
 - Two working example blueprints: a pizza shop and a phone repair store
 
 ## Real end-to-end flow
@@ -51,40 +55,41 @@ flowchart TD
     B --> C[Meta Cloud API]
     C --> D["Transport Layer\n(signature verify + wamid idempotency)"]
     D --> E[Conversation Manager]
-    E --> F["Execution Engine\n(deterministic, config-driven)"]
+    E --> F["🧠 Claude AI Employee\n(tool-calling loop)"]
     F --> G[Tool Registry]
     G --> H["Business Actions\n(create_order / create_lead / book_repair)"]
     H --> I[(PostgreSQL)]
     I --> J["Approval Panel\n(staff approve/reject)"]
-    J --> K[Customer Reply]
+    J --> K[WhatsApp reply]
     K --> A
 
-    L["🧠 AI Brain (Future)\nnot yet wired"] -.-> F
-    L -.-> G
+    E -.-> M["Execution Engine\n(deterministic — fallback when\nANTHROPIC_API_KEY is missing)"]
+    M -.-> G
 
-    style L stroke-dasharray: 5 5
+    style M stroke-dasharray: 5 5
 ```
 
 1. A customer sends a WhatsApp message to the business number.
 2. Meta's Cloud API delivers it to the app's webhook.
 3. The Transport Layer verifies the Meta signature (HMAC-SHA256) and dedups retries by `wamid` before anything else runs.
-4. The Conversation Manager persists the inbound message and loads conversation history.
-5. The Execution Engine — deterministic, keyword/slot-filling logic driven by the business's config — decides the next step (ask a question, confirm an order, capture a lead, hand over to a human, etc).
-6. The Tool Registry exists as the seam for this step but is not yet wired into the runtime — see [Vision & Roadmap](#-vision).
-7. When a flow completes, a business action handler (`create_order`, `create_lead`, `book_repair`) persists structured data to PostgreSQL.
+4. The Conversation Manager persists the inbound message and loads conversation history (used as Claude's short-term memory).
+5. The **Claude AI Employee** reads the conversation, understands the request in natural language, and decides which typed tool(s) to call.
+6. Claude calls tools from the **Tool Registry** live; tool results feed back into Claude's reasoning only — they are never shown to the customer.
+7. When Claude calls a business action (`create_order`, `create_lead`, `book_repair`), the action handler persists structured data to PostgreSQL — created as pending where staff approval is required.
 8. Staff review and approve/reject the record in the Approval Panel, optionally setting an ETA or repair mode.
 9. The decision triggers a WhatsApp reply back to the customer.
 
-The **AI Brain (Future)** node above is not implemented — it marks where a Claude-driven tool loop will eventually replace the deterministic decision logic in step 5 and start calling the Tool Registry directly.
+When `ANTHROPIC_API_KEY` is not set (or a Claude call fails), the **deterministic Execution Engine** takes step 5 instead — keyword/slot-filling logic driven by the business's config — calling the same Tool Registry and action handlers. It is the fallback path, not the main one.
 
 ## Architecture overview
 
 - **Template + Client config, merged by a loader.** A *template* (`src/templates/*`) defines a business type (pizza shop, phone store) — its flows, menu/catalog shape, and copy. A *client* (`src/clients/*`) supplies the specific business's data (Tony's Pizza, Galaxy Mobile). `src/config/loader.ts` merges the two into the single `businessConfig` the rest of the app reads.
 - **Business-agnostic core.** The Execution Engine, transport, persistence, and Approval Panel code contain no business-specific logic — everything specific lives in config.
 - **Single-tenant per deployment.** One business per running instance; the deployment itself is the isolation boundary. There is no multi-tenant database, no row-level security, no tenant switching.
-- **Transport abstraction.** WhatsApp Cloud API is behind a transport interface (`src/transport`) so the Simulator can exercise the same Conversation Manager and Execution Engine without touching WhatsApp.
-- **Deterministic Execution Engine today.** `src/flow/engine.ts` runs keyword/slot-filling logic against the merged config — no LLM call is made in the current runtime.
-- **Tool Registry (scaffolding).** `src/tools/*` defines 7 tools with metadata and zod input schemas, built as the seam for a future Claude-driven tool loop. It is not called by the Execution Engine yet.
+- **Transport abstraction.** WhatsApp Cloud API is behind a transport interface (`src/transport`) so the Simulator can exercise the same Conversation Manager and runtime without touching WhatsApp.
+- **Claude AI Employee runtime.** `src/ai/claude-brain.ts` runs a live Anthropic tool-calling loop: registry tools are converted to Claude tool definitions (`src/ai/tool-adapter.ts`), Claude selects and calls them, and conversation history is passed in as short-term memory. Active when `ANTHROPIC_API_KEY` is set.
+- **Deterministic Execution Engine (fallback).** `src/flow/engine.ts` runs keyword/slot-filling logic against the merged config, calling the same Tool Registry and action handlers. It runs when `ANTHROPIC_API_KEY` is missing (or a Claude call fails), so the app works with no LLM.
+- **Tool Registry.** `src/tools/*` defines 7 tools with metadata and zod input schemas. It is the single capability surface — called live by Claude and reused by the fallback engine; the AI never touches the database directly.
 
 See `docs/FRAMEWORK_ARCHITECTURE.md`, `docs/FLOW_ENGINE.md`, `docs/TRANSPORT_LAYER.md`, `docs/WHATSAPP_ARCHITECTURE.md`, `docs/BLUEPRINT_GUIDE.md`, and `docs/CLIENT_ENGINE_SPEC.md` for the full details.
 
@@ -146,8 +151,12 @@ cp .env.example .env.local
 | `WHATSAPP_ACCESS_TOKEN` | `your-permanent-access-token` | Meta Cloud API access token |
 | `WHATSAPP_PHONE_NUMBER_ID` | `your-phone-number-id` | Meta Cloud API phone number ID |
 | `WHATSAPP_API_VERSION` | `v21.0` | Meta Graph API version |
+| `ANTHROPIC_API_KEY` | `your-anthropic-api-key` | Enables the Claude AI Employee runtime. **Leave unset to use deterministic fallback mode.** |
+| `CLAUDE_MODEL` | `claude-opus-4-8` | Model used by the Claude runtime (override optional) |
 
-WhatsApp credentials are optional for local development — the Simulator exercises the full engine without them.
+WhatsApp credentials are optional for local development — the Simulator exercises the full runtime without them.
+
+**Claude usage note:** the Claude AI Employee runtime calls the Anthropic API and requires your own **separate Anthropic API billing**. If `ANTHROPIC_API_KEY` is not set, BizFlow AI runs in **deterministic fallback mode** — no Anthropic calls, no LLM cost, all flows still work.
 
 ## How to run
 
@@ -174,32 +183,30 @@ This is a development bypass and is disabled in production — do not rely on it
 
 BizFlow AI is not designed to be another chatbot.
 
-Its vision is to become an **AI Employee platform** — capable of performing real business tasks over WhatsApp through structured, typed business tools, not free-text scripts. The Execution Engine and Tool Registry already exist as the scaffolding for that; the deterministic logic running today is the first, honest step toward it.
+Its vision is to become an **AI Employee platform** — capable of performing real business tasks over WhatsApp through structured, typed business tools, not free-text scripts. That runtime is now live: Claude drives the conversation and calls the Tool Registry, with a deterministic engine as a dependable fallback. The next steps are durable memory, knowledge ingestion, and payments — see the roadmap.
 
 ## 🗺️ Roadmap
 
 **Completed**
 - ✅ WhatsApp Cloud API
 - ✅ Conversation Manager
-- ✅ Execution Engine
+- ✅ Claude AI Employee Runtime
 - ✅ Tool Registry
+- ✅ Live Tool Calling
 - ✅ Approval Panel
+- ✅ Hebrew customer-service behavior
 - ✅ Multi-business architecture
 
 **Next**
-- ⬜ Claude Brain
 - ⬜ Customer Memory
 - ⬜ Business Memory
-- ⬜ Payment Integrations
-- ⬜ Appointment Scheduling
-- ⬜ AI Employee Autonomy
+- ⬜ RAG / knowledge ingestion
+- ⬜ Payment integrations
+- ⬜ Appointment scheduling
+- ⬜ Per-conversation locking
+- ⬜ Reliable outbox / retries
 
-The engine you can run today is deterministic — no LLM is in the runtime loop. Wiring a real Claude tool-loop into the Execution Engine, so the AI (not keyword matching) drives the conversation and calls the Tool Registry, is the next milestone.
-
-**Fast-follows:**
-- Per-conversation locking (concurrent webhook deliveries for the same conversation)
-- Webhook failure alerting / outbox pattern for reliable delivery
-- Authentication on `/api/chat` (currently used by the Simulator)
+Honest scope: BizFlow AI uses **conversation history as short-term memory only** — there is **no long-term customer/business memory, no RAG/knowledge ingestion, and no full autonomy** yet. Those are on the Next list. Today the AI operates one conversation at a time and creates records that staff approve where relevant.
 
 ## Security notes
 
