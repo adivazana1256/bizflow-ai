@@ -10,7 +10,7 @@ export const galaxyMobile: ClientConfig = {
   name: "Galaxy Mobile",
   currency: "USD",
   timezone: "America/Los_Angeles",
-  locale: "en",
+  locale: "he",
 
   branding: { logo: "" },
   phones: ["+15559876543"],

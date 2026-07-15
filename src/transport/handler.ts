@@ -24,7 +24,14 @@ export async function processInbound(
 
   const messages = [...inbound.history, { role: "user" as const, content: inbound.text }];
 
-  const out = await respond(messages);
+  const out = ctx.businessId
+    ? await respond(messages, {
+        businessId: ctx.businessId,
+        channel: inbound.channel,
+        externalId: inbound.from,
+        idempotencyKey: inbound.messageId ?? randomUUID(),
+      })
+    : await respond(messages);
 
   // Action handling: persist the completed action via its handler. Each
   // submission is keyed by the inbound provider message id (a repeat delivery
